@@ -43,6 +43,7 @@ struct PreparedMessages {
     original_count: usize,
     filtered_count: usize,
     filters_active: bool,
+    merged: bool,
 }
 
 #[derive(Serialize)]
@@ -101,7 +102,7 @@ pub fn convert(
     run_conversion(input, source, format, &options).map(|report| report.output).map_err(js_error)
 }
 
-/// Convert chat export with the full chatpack 0.6 option surface.
+/// Convert chat export with the full chatpack 0.7 option surface.
 ///
 /// `options_json` accepts:
 /// - `include_timestamps`, `include_ids`, `include_replies`, `include_edited`
@@ -150,7 +151,7 @@ pub fn parse_chat(
         prepared.filtered_count,
         final_count,
         prepared.filters_active,
-        options.merge_consecutive,
+        prepared.merged,
     );
     let report = ParseReport { messages: prepared.messages, stats };
 
@@ -212,7 +213,7 @@ fn run_conversion(
         prepared.filtered_count,
         prepared.messages.len(),
         prepared.filters_active,
-        options.merge_consecutive,
+        prepared.merged,
     );
 
     Ok(ConversionReport { output, stats })
@@ -240,11 +241,13 @@ fn prepare_messages(
 
     let filtered_count = messages.len();
 
-    if options.merge_consecutive {
+    // IDs must remain one-to-one when the output includes reply references.
+    let merged = options.merge_consecutive && !options.include_replies && !options.include_ids;
+    if merged {
         messages = merge_consecutive(messages);
     }
 
-    Ok(PreparedMessages { messages, original_count, filtered_count, filters_active })
+    Ok(PreparedMessages { messages, original_count, filtered_count, filters_active, merged })
 }
 
 fn build_stats(
@@ -281,7 +284,7 @@ fn output_config(options: &ConvertOptions) -> OutputConfig {
     if options.include_timestamps {
         config = config.with_timestamps();
     }
-    if options.include_ids {
+    if options.include_ids || options.include_replies {
         config = config.with_ids();
     }
     if options.include_replies {
@@ -411,10 +414,34 @@ mod tests {
             .map_err(|e| e.as_string().unwrap_or_default())
             .expect("conversion should succeed");
 
-        assert!(output.contains("ID;Timestamp;Sender;Content;ReplyTo;Edited"));
+        assert!(output
+            .contains("ID;Timestamp;Sender;Content;ReplyTo;ReplyToSender;ReplyToTopic;Edited"));
         assert!(output.contains("1;"));
         assert!(output.contains("2;"));
-        assert!(output.contains("Bob;Reply;1;"));
+        assert!(output.contains("Bob;Reply;1;Alice;;"));
+    }
+
+    #[test]
+    fn test_replies_keep_message_ids_even_when_merge_requested() {
+        let input = r#"{"messages":[
+            {"id":-999994266,"type":"service"},
+            {"id":1,"type":"message","from":"Alice","text":"First"},
+            {"id":2,"type":"message","from":"Alice","text":"Second"},
+            {"id":3,"type":"message","from":"Bob","text":"Answer","reply_to_message_id":2}
+        ]}"#;
+        let options = ConvertOptions {
+            include_replies: true,
+            merge_consecutive: true,
+            ..ConvertOptions::default()
+        };
+        let report = run_conversion(input, "telegram", "json", &options).unwrap();
+        let messages: serde_json::Value = serde_json::from_str(&report.output).unwrap();
+
+        assert_eq!(messages.as_array().unwrap().len(), 3);
+        assert_eq!(messages[1]["id"], 2);
+        assert_eq!(messages[2]["reply_to"], 2);
+        assert_eq!(messages[2]["reply_to_sender"], "Alice");
+        assert!(!report.stats.merged);
     }
 
     #[test]

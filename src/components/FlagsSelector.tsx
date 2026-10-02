@@ -43,10 +43,15 @@ export const FlagsSelector = memo(function FlagsSelector({
 
   const handleToggle = useCallback(
     (flag: keyof Flags) => {
-      onChange({
+      const next = {
         ...value,
         [flag]: !value[flag],
-      })
+      }
+      if (flag === 'replies' && next.replies) {
+        next.ids = true
+      }
+      if (next.ids) next.merge = false
+      onChange(next)
     },
     [onChange, value],
   )
@@ -103,12 +108,22 @@ export const FlagsSelector = memo(function FlagsSelector({
                 type="checkbox"
                 checked={value[key]}
                 onChange={() => handleToggle(key)}
-                disabled={disabled}
+                disabled={
+                  disabled || (value.replies && key === 'ids') || (value.ids && key === 'merge')
+                }
                 style={styles.input}
               />
               <span style={styles.optionLabel}>{flagLabel}</span>
             </label>
           ))}
+          {value.replies && (
+            <span style={styles.help}>
+              Replies include IDs; merging is off to keep targets exact.
+            </span>
+          )}
+          {value.ids && !value.replies && (
+            <span style={styles.help}>Message IDs turn off merging to keep each ID exact.</span>
+          )}
         </div>
       )}
     </div>
@@ -184,5 +199,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     color: 'var(--text-primary)',
     lineHeight: 1.3,
+  },
+  help: {
+    padding: '4px 8px',
+    color: 'var(--text-secondary)',
+    fontSize: '12px',
+    lineHeight: 1.4,
   },
 }

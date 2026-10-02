@@ -37,7 +37,7 @@ Raw chat exports waste **80%+** of context window tokens on JSON syntax and meta
 - **🧠 Smart Processing:**
   - Auto-detects source platform from filenames.
   - Merges consecutive messages from the same sender.
-- **🛠️ Configurable:** Toggle timestamps, reply context, and output formats (CSV, JSON, JSONL).
+- **🛠️ Configurable:** Toggle timestamps, reply targets (ID, sender, or topic), and output formats (CSV, JSON, JSONL). Enabling replies keeps message IDs and disables merging so targets remain exact.
 
 ### Compression Results
 
